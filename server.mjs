@@ -1,4 +1,3 @@
-import cors from "cors";
 import express from "express";
 import { config } from "./config.mjs";
 import { checkoutRouter } from "./routes/checkout.mjs";
@@ -14,18 +13,31 @@ const allowedOrigins = new Set([
   "http://localhost:3000",
 ]);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-      callback(new Error(`Origin not allowed by CORS: ${origin}`));
-    },
-  })
-);
+  if (!origin) {
+    next();
+    return;
+  }
+
+  if (!allowedOrigins.has(origin)) {
+    next(new Error(`Origin not allowed by CORS: ${origin}`));
+    return;
+  }
+
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+
+  next();
+});
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
