@@ -2,14 +2,22 @@ import express from "express";
 import { getProductBySlug } from "../catalog.mjs";
 import { HttpError } from "../lib/httpError.mjs";
 import { createOrderRecord, findOrderByProviderOrderId, markOrderPaid, storeDownloadToken, storeLicense } from "../services/orderService.mjs";
-import { capturePayPalOrder, createPayPalCheckout } from "../services/paypalService.mjs";
-import { createSumUpCheckout, getSumUpCheckout } from "../services/sumupService.mjs";
+import { capturePayPalOrder, createPayPalCheckout, decodePayPalCustomData } from "../services/paypalService.mjs";
+import { createSumUpCheckout, decodeCheckoutReference, getSumUpCheckout } from "../services/sumupService.mjs";
 import { createLicenseRecord } from "../services/licenseService.mjs";
 import { createDownloadToken } from "../services/downloadService.mjs";
 import { sendLicenseEmail } from "../services/emailService.mjs";
 import { config } from "../config.mjs";
 
 export const checkoutRouter = express.Router();
+
+function resolveDownloadUrl(product, token) {
+  if (product.deliveryMode === "direct_link" && product.downloadUrl) {
+    return product.downloadUrl;
+  }
+
+  return `${config.appBaseUrl}/api/download/${token.token}`;
+}
 
 function validateBody(body) {
   if (!body?.buyerEmail || !body?.productSlug) {
@@ -54,6 +62,7 @@ checkoutRouter.post("/sumup/create", async (req, res, next) => {
     const product = validateBody(req.body);
     const checkout = await createSumUpCheckout({
       product,
+      buyerEmail: req.body.buyerEmail,
     });
 
     const order = await createOrderRecord({
@@ -89,21 +98,32 @@ checkoutRouter.post("/paypal/capture", async (req, res, next) => {
 
     const capture = await capturePayPalOrder(orderId);
     const order = await findOrderByProviderOrderId(orderId);
+    const purchaseUnit = capture.purchase_units?.[0] || null;
+    const customData = decodePayPalCustomData(purchaseUnit?.payments?.captures?.[0]?.custom_id || purchaseUnit?.custom_id);
+    const buyerEmail =
+      capture.payer?.email_address ||
+      order?.buyer_email ||
+      customData?.buyerEmail ||
+      null;
 
-    if (!order) {
-      throw new HttpError(404, "Order record not found for the PayPal order.");
+    if (!buyerEmail) {
+      throw new HttpError(400, "Buyer email could not be determined from the PayPal capture.");
     }
 
-    await markOrderPaid({ providerOrderId: orderId });
+    if (order) {
+      await markOrderPaid({ providerOrderId: orderId });
+    }
 
     const license = createLicenseRecord(product.code);
     const token = createDownloadToken();
-    const downloadUrl = `${config.appBaseUrl}/api/download/${token.token}`;
+    const downloadUrl = resolveDownloadUrl(product, token);
 
-    await storeLicense({ orderId: order.id, productId: product.id, license });
-    await storeDownloadToken({ orderId: order.id, token });
+    if (order) {
+      await storeLicense({ orderId: order.id, productId: product.id, license });
+      await storeDownloadToken({ orderId: order.id, token });
+    }
     await sendLicenseEmail({
-      buyerEmail: order.buyer_email,
+      buyerEmail,
       productName: product.name,
       serial: license.serial,
       downloadUrl,
@@ -141,21 +161,27 @@ checkoutRouter.post("/sumup/confirm", async (req, res, next) => {
     }
 
     const order = await findOrderByProviderOrderId(checkoutId);
+    const referenceData = decodeCheckoutReference(checkout.checkout_reference);
+    const buyerEmail = checkout.customer_email || req.body.buyerEmail || referenceData?.buyerEmail || null;
 
-    if (!order) {
-      throw new HttpError(404, "Order record not found for the SumUp checkout.");
+    if (!buyerEmail) {
+      throw new HttpError(400, "Buyer email could not be determined from the SumUp checkout.");
     }
 
-    await markOrderPaid({ providerOrderId: checkoutId });
+    if (order) {
+      await markOrderPaid({ providerOrderId: checkoutId });
+    }
 
     const license = createLicenseRecord(product.code);
     const token = createDownloadToken();
-    const downloadUrl = `${config.appBaseUrl}/api/download/${token.token}`;
+    const downloadUrl = resolveDownloadUrl(product, token);
 
-    await storeLicense({ orderId: order.id, productId: product.id, license });
-    await storeDownloadToken({ orderId: order.id, token });
+    if (order) {
+      await storeLicense({ orderId: order.id, productId: product.id, license });
+      await storeDownloadToken({ orderId: order.id, token });
+    }
     await sendLicenseEmail({
-      buyerEmail: order.buyer_email,
+      buyerEmail,
       productName: product.name,
       serial: license.serial,
       downloadUrl,

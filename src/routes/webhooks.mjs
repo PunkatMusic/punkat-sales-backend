@@ -42,7 +42,7 @@ async function fulfillPaidOrder({ provider, payload, providerOrderId, buyerEmail
 webhookRouter.post("/paypal", async (req, res, next) => {
   try {
     await verifyPayPalWebhook(req);
-    const product = getProductBySlug("surgeq-l5");
+    const product = getProductBySlug("revverb");
 
     const result = await fulfillPaidOrder({
       provider: "paypal",
@@ -76,7 +76,7 @@ webhookRouter.post("/sumup", async (req, res, next) => {
       return;
     }
 
-    const product = getProductBySlug("surgeq-l5");
+    const product = getProductBySlug("revverb");
 
     const result = await fulfillPaidOrder({
       provider: "sumup",

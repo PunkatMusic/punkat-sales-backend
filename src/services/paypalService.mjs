@@ -2,6 +2,22 @@ import crypto from "crypto";
 import { config } from "../config.mjs";
 import { HttpError } from "../lib/httpError.mjs";
 
+function encodeCustomData(data) {
+  return Buffer.from(JSON.stringify(data)).toString("base64url");
+}
+
+export function decodePayPalCustomData(customId) {
+  if (!customId) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(customId, "base64url").toString("utf8"));
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function getAccessToken() {
   const credentials = Buffer.from(`${config.paypal.clientId}:${config.paypal.clientSecret}`).toString("base64");
   const response = await fetch(`${config.paypal.apiBase}/v1/oauth2/token`, {
@@ -44,7 +60,11 @@ async function paypalFetch(path, { method = "GET", body, accessToken }) {
 
 export async function createPayPalCheckout({ product, buyerEmail }) {
   const accessToken = await getAccessToken();
-  const customId = crypto.randomUUID();
+  const customId = encodeCustomData({
+    productSlug: product.slug,
+    buyerEmail,
+    nonce: crypto.randomUUID(),
+  });
   const payload = await paypalFetch("/v2/checkout/orders", {
     method: "POST",
     accessToken,

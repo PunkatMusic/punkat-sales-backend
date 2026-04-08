@@ -3,6 +3,22 @@ import { createHmac } from "crypto";
 import { config } from "../config.mjs";
 import { HttpError } from "../lib/httpError.mjs";
 
+function encodeCheckoutReference(data) {
+  return Buffer.from(JSON.stringify(data)).toString("base64url");
+}
+
+export function decodeCheckoutReference(reference) {
+  if (!reference) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(reference, "base64url").toString("utf8"));
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function sumupFetch(path, { method = "GET", body }) {
   const response = await fetch(`${config.sumup.apiBase}${path}`, {
     method,
@@ -22,8 +38,12 @@ async function sumupFetch(path, { method = "GET", body }) {
   return payload;
 }
 
-export async function createSumUpCheckout({ product }) {
-  const checkoutReference = crypto.randomUUID();
+export async function createSumUpCheckout({ product, buyerEmail }) {
+  const checkoutReference = encodeCheckoutReference({
+    productSlug: product.slug,
+    buyerEmail,
+    nonce: crypto.randomUUID(),
+  });
   const payload = await sumupFetch("/v0.1/checkouts", {
     method: "POST",
     body: {
@@ -32,7 +52,7 @@ export async function createSumUpCheckout({ product }) {
       currency: product.currency,
       merchant_code: config.sumup.merchantCode,
       description: product.name,
-      return_url: `${config.appBaseUrl}/api/webhooks/sumup`,
+      pay_to_email: "sales@punkatmusic.com",
       redirect_url: config.successUrl,
     },
   });
