@@ -19,8 +19,10 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "punkat-sales-backend",
+    version: "cors-fix-2",
   });
 });
+
 
 app.use("/api/checkout", checkoutRouter);
 app.use("/api/webhooks", webhookRouter);
