@@ -44,6 +44,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     service: "punkat-sales-backend",
+    version: "cors-fix-2",
   });
 });
 
